@@ -44,6 +44,7 @@ class CorrBlock:
         coords = coords.contiguous().view(batch*num, 2, ht, wd)
         
         for i in range(self.num_levels):
+            #to index corr_pyramid at level [i], we need to divide coords by 2**i
             corr = CorrSampler.apply(self.corr_pyramid[i], coords/2**i, self.radius)
             out_pyramid.append(corr.view(batch, num, -1, ht, wd))
 

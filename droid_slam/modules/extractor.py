@@ -51,7 +51,7 @@ class ResidualBlock(nn.Module):
 
         if self.downsample is not None:
             x = self.downsample(x)
-
+        #elementwise sum of feature-maps
         return self.relu(x+y)
 
 

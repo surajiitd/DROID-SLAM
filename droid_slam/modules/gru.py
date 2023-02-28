@@ -16,18 +16,24 @@ class ConvGRU(nn.Module):
         self.convr_glo = nn.Conv2d(h_planes, h_planes, 1, padding=0)
         self.convq_glo = nn.Conv2d(h_planes, h_planes, 1, padding=0)
 
+
     def forward(self, net, *inputs):
+        """ The net input corresponds to the previous hidden state, and the *inputs input corresponds to the current input."""
+
         inp = torch.cat(inputs, dim=1)
         net_inp = torch.cat([net, inp], dim=1)
 
         b, c, h, w = net.shape
         glo = torch.sigmoid(self.w(net)) * net
         glo = glo.view(b, c, h*w).mean(-1).view(b, c, 1, 1)
-
+        #update gate
         z = torch.sigmoid(self.convz(net_inp) + self.convz_glo(glo))
+        #reset gate
         r = torch.sigmoid(self.convr(net_inp) + self.convr_glo(glo))
+        #new state
         q = torch.tanh(self.convq(torch.cat([r*net, inp], dim=1)) + self.convq_glo(glo))
-
+        
+        #update hidden state
         net = (1-z) * net + z * q
         return net
 

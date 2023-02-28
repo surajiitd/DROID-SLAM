@@ -1,8 +1,7 @@
-name: droidenv5
+name: droid_novis
 channels:
   - rusty1s
   - pytorch
-  - open3d-admin
   - nvidia
   - conda-forge
   - defaults
@@ -10,7 +9,6 @@ dependencies:
   - pytorch-scatter
   - torchaudio
   - torchvision
-  - open3d
   - pytorch=1.10
   - cudatoolkit=11.3
   - tensorboard
@@ -20,5 +18,3 @@ dependencies:
   - suitesparse
   - matplotlib
   - pyyaml
-
-

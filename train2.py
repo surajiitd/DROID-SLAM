@@ -3,6 +3,9 @@ sys.path.append('droid_slam')
 
 import cv2
 import numpy as np
+#added by suraj to romove error: "AttributeError: module 'numpy.random' has no attribute 'default_rng'"
+# np.random.bit_generator = np.random._bit_generator
+
 from collections import OrderedDict
 
 import torch
@@ -12,18 +15,17 @@ from data_readers.factory import dataset_factory
 
 from lietorch import SO3, SE3, Sim3
 from geom import losses
-from geom.losses import geodesic_loss, residual_loss, flow_loss
+# from geom.losses import geodesic_loss, residual_loss, flow_loss
 from geom.graph_utils import build_frame_graph
 
 # network
 from droid_net import DroidNet
-from logger import Logger
+#from logger import Logger
 
 # DDP training
 import torch.multiprocessing as mp
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
-
 
 def setup_ddp(gpu, args):
     dist.init_process_group(                                   
@@ -34,7 +36,6 @@ def setup_ddp(gpu, args):
 
     torch.manual_seed(0)
     torch.cuda.set_device(gpu)
-
 def show_image(image):
     image = image.permute(1, 2, 0).cpu().numpy()
     cv2.imshow('image', image / 255.0)
@@ -71,7 +72,7 @@ def train(gpu, args):
     scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, 
         args.lr, args.steps, pct_start=0.01, cycle_momentum=False)
 
-    logger = Logger(args.name, scheduler)
+    #logger = Logger(args.name, scheduler)
     should_keep_training = True
     total_steps = 0
 
@@ -80,15 +81,21 @@ def train(gpu, args):
             optimizer.zero_grad()
 
             images, poses, disps, intrinsics = [x.to('cuda') for x in item]
-
+            """DEBUG Training: when i_batch = 0 (1st batch)
+            images.shape = torch.Size([1, 7, 3, 384, 512])
+            poses.shape =  torch.Size([1, 7, 7])
+            disps.shape = torch.Size([1, 7, 384, 512])
+            intrinsics.shape = torch.Size([1, 7, 4])
+            So, I have 7 fames in every batch and I am doing 15 updates to depths & poses per batch 
+            inside model()'s forward() function.
+            """
             # convert poses w2c -> c2w
             Ps = SE3(poses).inv()
             Gs = SE3.IdentityLike(Ps)
 
             # randomize frame graph
             if np.random.rand() < 0.5:
-                graph = build_frame_graph(poses, disps, intrinsics, num=args.edges)
-            
+                graph = build_frame_graph(poses, disps, intrinsics, num=args.edges)       
             else:
                 graph = OrderedDict()
                 for i in range(N):
@@ -105,8 +112,12 @@ def train(gpu, args):
                 r = rng.random()
                 
                 intrinsics0 = intrinsics / 8.0
-                poses_est, disps_est, residuals = model(Gs, images, disp0, intrinsics0, 
-                    graph, num_steps=args.iters, fixedp=2)
+                poses_est, disps_est, residuals = model(Gs, images, disp0, intrinsics0, graph, num_steps=args.iters, fixedp=2)
+                # poses_est is a list of 15 length with each element of poses_est[0].tangent_shape torch.Size([1, 7, 6])
+                # disps_est is a list of 15 length with each element of disps_est[0].shape torch.Size([1, 7, 384, 512])
+                # residuals is a list of 15 length with each element of residuals[0].shape torch.Size([1, 24, 48, 64, 2])
+                """ WHAT IS 15 HERE??? => 15 is no. of iterations of convGRU update inside model() function"""
+                """ and 7 is #nodes for sure and 24 would be #edges in the graph as the size of ii and jj is also 24"""
 
                 geo_loss, geo_metrics = losses.geodesic_loss(Ps, poses_est, graph, do_scale=False)
                 res_loss, res_metrics = losses.residual_loss(residuals)
@@ -130,7 +141,9 @@ def train(gpu, args):
             total_steps += 1
 
             if gpu == 0:
-                logger.push(metrics)
+                
+                #logger.push(metrics)
+                pass
 
             if total_steps % 10000 == 0 and gpu == 0:
                 PATH = 'checkpoints/%s_%06d.pth' % (args.name, total_steps)

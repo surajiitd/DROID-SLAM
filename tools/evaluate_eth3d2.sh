@@ -70,20 +70,25 @@ ETH_PATH=datasets/ETH3D/train
 # )
 
 evalset=(
-    #cables_1
-    #cables_2
-    #ceiling_1
-    #desk_3
-    #mannequin_1
+    # cables_1
+    # #cables_2
+    # #ceiling_1
+    # #desk_3
+    # #mannequin_1
+    # sofa_1
     #sofa_1
+    sofa_1_long_fbfb
     #table_3
-    #sfm_house_loop
-    plant_scene_1
-    
-    # sfm_lab_room_1
-    # large_loop_1
+    #table_3_long
+    #table_3_long_fbfb
+    # sfm_house_loop
+    # plant_scene_1
+
+    #sfm_lab_room_1
+    #large_loop_1
     #sfm_garden
     #sfm_bench
+
 )
 
 
@@ -92,7 +97,6 @@ for seq in ${evalset[@]}; do
     python evaluation_scripts/test_eth3d.py --datapath=$ETH_PATH/$seq --weights=droid.pth --disable_vis $@
 done
 # the last $@ is for the extra command-line-params that we've given got added automatically with that python command.
-
 
 
 

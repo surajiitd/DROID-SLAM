@@ -1,18 +1,17 @@
 import sys
 sys.path.append('droid_slam')
-
-from tqdm import tqdm
-import numpy as np
-import torch
-import lietorch
-import cv2
-import os
-import glob 
-import time
-import argparse
-
-import torch.nn.functional as F
+import glob
 from droid import Droid
+import torch.nn.functional as F
+import argparse
+import time
+import os
+import cv2
+import lietorch
+import torch
+import numpy as np
+from tqdm import tqdm
+
 
 
 def show_image(image):
@@ -20,23 +19,25 @@ def show_image(image):
     cv2.imshow('image', image / 255.0)
     cv2.waitKey(1)
 
+
 def image_stream(datapath, image_size=[320, 512]):
     """ image generator """
 
     fx, fy, cx, cy = 517.3, 516.5, 318.6, 255.3
 
-    K_l = np.array([fx, 0.0, cx, 0.0, fy, cy, 0.0, 0.0, 1.0]).reshape(3,3)
+    K_l = np.array([fx, 0.0, cx, 0.0, fy, cy, 0.0, 0.0, 1.0]).reshape(3, 3)
     d_l = np.array([0.2624, -0.9531, -0.0054, 0.0026, 1.1633])
 
     # read all png images in folder
-    images_list = sorted(glob.glob(os.path.join(datapath, 'rgb', '*.png')))[::2]
-    
+    images_list = sorted(
+        glob.glob(os.path.join(datapath, 'rgb', '*.png')))[::2]
+
     for t, imfile in enumerate(images_list):
         image = cv2.imread(imfile)
         ht0, wd0, _ = image.shape
         image = cv2.undistort(image, K_l, d_l)
         image = cv2.resize(image, (320+32, 240+16))
-        image = torch.from_numpy(image).permute(2,0,1)
+        image = torch.from_numpy(image).permute(2, 0, 1)
 
         intrinsics = torch.as_tensor([fx, fy, cx, cy]).cuda()
         intrinsics[0] *= image.shape[2] / 640.0
@@ -50,6 +51,7 @@ def image_stream(datapath, image_size=[320, 512]):
         image = image[:, 8:-8, 16:-16]
 
         yield t, image[None], intrinsics
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -71,6 +73,8 @@ if __name__ == '__main__':
     parser.add_argument("--backend_thresh", type=float, default=15.0)
     parser.add_argument("--backend_radius", type=int, default=2)
     parser.add_argument("--backend_nms", type=int, default=3)
+    parser.add_argument("--upsample", action="store_true")
+    parser.add_argument("--reconstruction_path", help="path to saved reconstruction")
     args = parser.parse_args()
 
     args.stereo = False
@@ -87,7 +91,6 @@ if __name__ == '__main__':
         if not args.disable_vis:
             show_image(image)
         droid.track(t, image, intrinsics=intrinsics)
-
 
     traj_est = droid.terminate(image_stream(args.datapath))
 
@@ -107,17 +110,15 @@ if __name__ == '__main__':
     tstamps = [float(x.split('/')[-1][:-4]) for x in images_list]
 
     traj_est = PoseTrajectory3D(
-        positions_xyz=traj_est[:,:3],
-        orientations_quat_wxyz=traj_est[:,3:],
+        positions_xyz=traj_est[:, :3],
+        orientations_quat_wxyz=traj_est[:, 3:],
         timestamps=np.array(tstamps))
 
     gt_file = os.path.join(args.datapath, 'groundtruth.txt')
     traj_ref = file_interface.read_tum_trajectory_file(gt_file)
 
     traj_ref, traj_est = sync.associate_trajectories(traj_ref, traj_est)
-    result = main_ape.ape(traj_ref, traj_est, est_name='traj', 
-        pose_relation=PoseRelation.translation_part, align=True, correct_scale=True)
-
+    result = main_ape.ape(traj_ref, traj_est, est_name='traj',
+                          pose_relation=PoseRelation.translation_part, align=True, correct_scale=True)
 
     print(result)
-

@@ -25,6 +25,7 @@ def iproj(disps, intrinsics, jacobian=False):
         torch.arange(wd).to(disps.device).float())
 
     i = torch.ones_like(disps)
+    #perspective projection
     X = (x - cx) / fx
     Y = (y - cy) / fy
     pts = torch.stack([X, Y, i, disps], dim=-1)
@@ -72,7 +73,7 @@ def actp(Gij, X0, jacobian=False):
         X, Y, Z, d = X1.unbind(dim=-1)
         o = torch.zeros_like(d)
         B, N, H, W = d.shape
-
+        #DEBUG: what is this hardcoded values? are they correct, check somewhere?
         if isinstance(Gij, SE3):
             Ja = torch.stack([
                 d,  o,  o,  o,  Z, -Y,
@@ -94,14 +95,15 @@ def actp(Gij, X0, jacobian=False):
     return X1, None
 
 def projective_transform(poses, depths, intrinsics, ii, jj, jacobian=False, return_depth=False):
-    """ map points from ii->jj """
+    """ map points from frame_ii->frame_jj  (ii to jj is an edge in covisibility graph)
+     it'll find the correspondence-field (corresponding points of frame_ii in frame_jj )"""
 
     # inverse project (pinhole)
     X0, Jz = iproj(depths[:,ii], intrinsics[:,ii], jacobian=jacobian)
     
     # transform
     Gij = poses[:,jj] * poses[:,ii].inv()
-
+    # DEBUG: why 0.1 and why not 0. why this line reqd?
     Gij.data[:,ii==jj] = torch.as_tensor([-0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0], device="cuda")
     X1, Ja = actp(Gij, X0, jacobian=jacobian)
     
@@ -117,23 +119,29 @@ def projective_transform(poses, depths, intrinsics, ii, jj, jacobian=False, retu
         Jj = torch.matmul(Jp, Ja)
         Ji = -Gij[:,:,None,None,None].adjT(Jj)
 
-        Jz = Gij[:,:,None,None] * Jz
+        Jz = Gij[:,:,None,None] * Jz  #elementwise multiplication
         Jz = torch.matmul(Jp, Jz.unsqueeze(-1))
-
+        """ return ***dense-correspondence field*** ,valid mask, and Jacobians"""
         return x1, valid, (Ji, Jj, Jz)
-
+    
+    """ return ***dense-correspondence field*** and valid mask."""
     return x1, valid
 
 def induced_flow(poses, disps, intrinsics, ii, jj):
-    """ optical flow induced by camera motion """
+    """ optical flow induced by camera motion 
+    it is v. simple if you have dense-correspondence field. Just do the difference b/w this and coords0"""
 
     ht, wd = disps.shape[2:]
     y, x = torch.meshgrid(
         torch.arange(ht).to(disps.device).float(),
         torch.arange(wd).to(disps.device).float())
 
+    #find all possible coords in frame_ii using meshgrid
     coords0 = torch.stack([x, y], dim=-1)
+
+    #find dense-correspondence field
     coords1, valid = projective_transform(poses, disps, intrinsics, ii, jj, False)
 
+    # Now, induced flow is just the difference.
     return coords1[...,:2] - coords0, valid
 

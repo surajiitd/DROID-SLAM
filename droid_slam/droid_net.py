@@ -25,6 +25,7 @@ def cvx_upsample(data, mask):
     mask = mask.view(batch, 1, 9, 8, 8, ht, wd)
     mask = torch.softmax(mask, dim=2)
 
+    """DUBUG: see the size of up_data after unfolding"""
     up_data = F.unfold(data, [3,3], padding=1)
     up_data = up_data.view(batch, dim, 9, 1, 1, ht, wd)
 
@@ -57,6 +58,11 @@ class GraphAgg(nn.Module):
             nn.Conv2d(128, 8*8*9, 1, padding=0))
 
     def forward(self, net, ii):
+        """srj: Graph aggregation operator:
+        In this case, `ii` is used to group the feature map 
+        based on the indices and take mean of each group to 
+        aggregate the feature map.
+        """
         batch, num, ch, ht, wd = net.shape
         net = net.view(batch*num, ch, ht, wd)
 
@@ -64,7 +70,8 @@ class GraphAgg(nn.Module):
         net = self.relu(self.conv1(net))
 
         net = net.view(batch, num, 128, ht, wd)
-        net = scatter_mean(net, ix, dim=1)
+        """main aggregation is happening here"""
+        net = scatter_mean(net, ix, dim=1)  
         net = net.view(-1, 128, ht, wd)
 
         net = self.relu(self.conv2(net))
@@ -78,7 +85,13 @@ class GraphAgg(nn.Module):
 class UpdateModule(nn.Module):
     def __init__(self):
         super(UpdateModule, self).__init__()
-        cor_planes = 4 * (2*3 + 1)**2
+        
+        # radius = 3, 
+        # lookup = 7 x 7  [2*3 + 1 = 7]
+        # flatenned lookup = 7**2 = 49
+        # 4 is levels of pyramid.
+        # so cor_planes = levels_of_pyr * flattened_lookup
+        cor_planes = 4 * (2*3 + 1)**2 
 
         self.corr_encoder = nn.Sequential(
             nn.Conv2d(cor_planes, 128, 1, padding=0),
@@ -107,35 +120,47 @@ class UpdateModule(nn.Module):
 
         self.gru = ConvGRU(128, 128+128+64)
         self.agg = GraphAgg()
-
     def forward(self, net, inp, corr, flow=None, ii=None, jj=None):
-        """ RaftSLAM update operator """
+        """ RaftSLAM update operator 
+        this forward of updatemodule is called just for one image"""
 
-        batch, num, ch, ht, wd = net.shape
-
+        batch, num, ch, ht, wd = net.shape  # num is here number of edges for which we are doing update.
+        
+        """Ques: How do we initializing depths and camera poses in this iterative optimization algorithm???
+        We don't need to initialise depth and poses...This line is where first update operator is applied. 
+        And if flow is None, we are initialising motion features i.e.,[flow, residual] to 0... 
+        inturn we don't need to initialise initial poses and depths now for flow... 
+        But we need to initialise pose and depths individually to do the 1st correlation lookup.
+        (we've directly initialized motion[flow,residual])."""
         if flow is None:
             flow = torch.zeros(batch, num, 4, ht, wd, device=net.device)
 
         output_dim = (batch, num, -1, ht, wd)
         net = net.view(batch*num, -1, ht, wd)
-        inp = inp.view(batch*num, -1, ht, wd)        
+        inp = inp.view(batch*num, -1, ht, wd)
         corr = corr.view(batch*num, -1, ht, wd)
         flow = flow.view(batch*num, -1, ht, wd)
 
         corr = self.corr_encoder(corr)
+        """DEBUG: check the size of flow before and after: """
         flow = self.flow_encoder(flow)
         net = self.gru(net, inp, corr, flow)
 
         ### update variables ###
+        #flow revisions
         delta = self.delta(net).view(*output_dim)
+        # confidence map
         weight = self.weight(net).view(*output_dim)
-
+        """DEBUG: check the size of delta before and after: """
         delta = delta.permute(0,1,3,4,2)[...,:2].contiguous()
         weight = weight.permute(0,1,3,4,2)[...,:2].contiguous()
 
         net = net.view(*output_dim)
 
         if ii is not None:
+            """Took from Paper: 
+            pool(scatter_mean) the hidden state over all features which share the same source view i and predict a pixel-wise damping factor λ (eta here).
+            Additionally, we use the pooled features to predict a 8x8 mask which can be used to upsample the inverse depth estimate."""
             eta, upmask = self.agg(net, ii.to(net.device))
             return net, delta, weight, eta, upmask
 
@@ -152,10 +177,12 @@ class DroidNet(nn.Module):
 
 
     def extract_features(self, images):
-        """ run feeature extraction networks """
+        """ run feature extraction networks : to send to correlation module"""
 
         # normalize images
         images = images[:, :, [2,1,0]] / 255.0
+        """Debug: check how many images are comming here: Ans: """
+
         mean = torch.as_tensor([0.485, 0.456, 0.406], device=images.device)
         std = torch.as_tensor([0.229, 0.224, 0.225], device=images.device)
         images = images.sub_(mean[:, None, None]).div_(std[:, None, None])
@@ -173,19 +200,37 @@ class DroidNet(nn.Module):
         """ Estimates SE3 or Sim3 between pair of frames """
 
         u = keyframe_indicies(graph)
+
+        """DEBUG: what is the size of ii and jj... is it just one edge or list of edges ?? """
         ii, jj, kk = graph_to_edge_list(graph)
+        """ ii has starting-nodes and jj has ending-nodes of the edges 
+        ex: edge0 is from node ii[0] to jj[0] and so on.
+            edge1 is from node ii[1] to jj[1] and so on.
+        So, (ii,jj) will together represent the edges of the graph.
+        """
 
         ii = ii.to(device=images.device, dtype=torch.long)
         jj = jj.to(device=images.device, dtype=torch.long)
 
+        """DEBUG: check the size of fmaps,net, inp: Is it for one image or for all images? Ans:  """
         fmaps, net, inp = self.extract_features(images)
+
+        """DEBUG: try to print(ii) to see what values are coming here"""
         net, inp = net[:,ii], inp[:,ii]
-        corr_fn = CorrBlock(fmaps[:,ii], fmaps[:,jj], num_levels=4, radius=3)
+        corr_fn = CorrBlock(fmaps[:,ii], fmaps[:,jj], num_levels=4, radius=3) 
 
         ht, wd = images.shape[-2:]
         coords0 = pops.coords_grid(ht//8, wd//8, device=images.device)
-        
-        coords1, _ = pops.projective_transform(Gs, disps, intrinsics, ii, jj)
+
+        """ 
+        this function map points from fram_ii -> frame_jj 
+        coords1 is dense correspondence field. [ which can be used to calc the induced flow by (induced_flow = coords1 - coords0)]
+        """
+
+        #In below line: ii is starting frame(or starting node of cov. graph) and jj is ending frame(or ending node of cov. graph)
+        """ pops.projective_transform() map points from frame_ii->frame_jj  (ii to jj is an edge in covisibility graph)
+        it'll find the correspondence-field (corresponding points of frame_ii in frame_jj )"""
+        coords1, _ = pops.projective_transform(Gs, disps, intrinsics, ii, jj)   # for edge ii->jj (which represents a pair of frames)
         target = coords1.clone()
 
         Gs_list, disp_list, residual_list = [], [], []
@@ -195,25 +240,53 @@ class DroidNet(nn.Module):
             coords1 = coords1.detach()
             target = target.detach()
 
-            # extract motion features
+            #Correlation Lookup
             corr = corr_fn(coords1)
+            
+            # extract motion features
+            #DCF is "Dense Correspondence Field" : which means corresponding pixels of frame_ii in frame_jj
+            #below is residual = prev_pred_DCF - current_DCF..... (where prev_pred_DCF = prev_DCF + prev_delta)
             resd = target - coords1
+            
+            #below is induced flow(= DCF - coords0)
             flow = coords1 - coords0
 
+            # concatenate motion features
             motion = torch.cat([flow, resd], dim=-1)
             motion = motion.permute(0,1,4,2,3).clamp(-64.0, 64.0)
 
+            # Note that this update and all the steps in this function is for frame pair (ii,jj)
             net, delta, weight, eta, upmask = \
                 self.update(net, inp, corr, motion, ii, jj)
 
+            # Srj: update flow with flow-revision
+            # target is predicted DCF (= current_DCF + current_delta)
+            # target is one step away from predicted flow (predicted_fow = target - coords0)
             target = coords1 + delta
 
             for i in range(2):
-                Gs, disps = BA(target, weight, eta, Gs, disps, intrinsics, ii, jj, fixedp=2)
+                Gs, disps = BA(target, weight, eta, Gs, disps, intrinsics, ii, jj, fixedp=2) # fixedp means fix poses (i.e. fix first 2 poses)
 
+            """DEBUG Training:
+            All shapes that are passed in above function when BA is called for first set of 7 frames:
+
+            weight.shape = torch.Size([1, 22, 48, 64, 2])
+            target.shape = torch.Size([1, 22, 48, 64, 2])
+            eta.shape = torch.Size([1, 7, 48, 64])
+            Gs is a SE3 type object, and it is not a tensor
+            Gs.shape = torch.Size([1, 7])   ..... Gs.tangent_shape = torch.Size([1, 7, 6])
+            disps.shape = torch.Size([1, 7, 48, 64])
+            intrinsics.shape = torch.Size([1, 7, 4])
+            ii.shape = torch.Size([22])
+            jj.shape = torch.Size([22])
+            """
+
+            # coords1 is DCF for next iteration. 
             coords1, valid_mask = pops.projective_transform(Gs, disps, intrinsics, ii, jj)
+            # Similarly residual is residual for next iteration.
             residual = (target - coords1)
-
+            
+            # we are appending Gs, disps and residual for each update of (convGRU update + BA) ... (#updates = num_steps = 15 while training)
             Gs_list.append(Gs)
             disp_list.append(upsample_disp(disps, upmask))
             residual_list.append(valid_mask * residual)

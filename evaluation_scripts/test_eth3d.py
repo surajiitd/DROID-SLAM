@@ -22,16 +22,80 @@ def show_image(image):
     cv2.imshow('image', image / 255.0)
     cv2.waitKey(1)
 
-def image_stream(datapath, use_depth=False, stride=1):
+def print_minmax(arr,desc):
+    """visualize depths and uncertainty of any method"""
+    
+    print("*" * 60)
+    print("***{}***  :".format(desc))
+    print("arr.shape = {}".format(arr.shape))
+    print("type(arr[0,0] = {}".format(type(arr[0,0])))
+    print("np.min = {}".format(np.min(arr)))
+    print("np.max = {}".format(np.max(arr)))
+    print("np.mean = {}".format(np.mean(arr)))
+    print("np.median = {}".format(np.median(arr)))
+    #print("arr[200:220,200:220] = \n",arr[200:220,200:220])
+    print("arr[0:10,0:10] = \n",arr[0:10,0:10])
+    print("*" * 60 + "\n")
+
+
+def read_groundtruth(filename):
+    with open(filename, 'r') as f:
+        lines = f.readlines()
+
+    gt_poses_list = []
+    lines = lines[1:]
+    for line in lines:
+        
+        if line.startswith('#'):
+            gt_poses_list.append([0, 0, 0, 0, 0, 0, 1])
+            continue
+        data = line.split()
+        #timestamp = int(data[0])
+        tx, ty, tz = [float(x) for x in data[1:4]]
+        qx, qy, qz, qw = [float(x) for x in data[4:]]
+        gt_poses_list.append([tx, ty, tz, qx, qy, qz, qw])
+    
+    print("# of gt poses = ", len(gt_poses_list))
+    return gt_poses_list
+
+
+
+def image_stream(datapath, use_depth=False, stride=1, use_pred_depth = False):
     """ image generator """
 
     fx, fy, cx, cy = np.loadtxt(os.path.join(datapath, 'calibration.txt')).tolist()
     image_list = sorted(glob.glob(os.path.join(datapath, 'rgb', '*.png')))[::stride]
-    depth_list = sorted(glob.glob(os.path.join(datapath, 'depth', '*.png')))[::stride]
+    if use_pred_depth:
+        max_depth_threshold = ""
+        depth_list = sorted(glob.glob(os.path.join(datapath, f'pixelformer_depth{max_depth_threshold}', '*.png')))[::stride]
+    else:    
+        depth_list = sorted(glob.glob(os.path.join(datapath, 'depth', '*.png')))[::stride]
+    gt_depth_list = sorted(glob.glob(os.path.join(datapath, 'depth', '*.png')))[::stride]
+    print(" # of images and depths = ", len(image_list), len(depth_list))
+    gt_poses_list = read_groundtruth(os.path.join(args.datapath, "groundtruth_exact_in_number.txt"))
 
-    for t, (image_file, depth_file) in enumerate(zip(image_list, depth_list)):
+    for t, (image_file, depth_file, gt_pose, gt_depth_file) in enumerate(zip(image_list, depth_list,gt_poses_list, gt_depth_list)):
+        #print("t = ",t)    
         image = cv2.imread(image_file)
-        depth = cv2.imread(depth_file, cv2.IMREAD_ANYDEPTH) / 5000.0
+        
+        height,width,_= image.shape
+        #image = image[height%32:, width%32:,:]
+        #image = cv2.resize(image, (width, height))
+
+        if use_pred_depth:
+            depth = cv2.imread(depth_file, -1) / 1000.0
+            
+            #if t==0:
+            #   print("initialising depth with 0")
+            #depth = depth * 0.
+            #print_minmax(depth,"pred_depth")
+            #sys.exit(0)
+        else:
+            depth = cv2.imread(depth_file, -1) / 5000.0  # cv2.IMREAD_ANYDEPTH
+            #print_minmax(depth,"gt_depth")
+            #sys.exit(0)
+        gt_depth = cv2.imread(gt_depth_file, -1) / 5000.0  # cv2.IMREAD_ANYDEPTH
+            
 
         h0, w0, _ = image.shape
         h1 = int(h0 * np.sqrt((384 * 512) / (h0 * w0)))
@@ -45,12 +109,21 @@ def image_stream(datapath, use_depth=False, stride=1):
         depth = F.interpolate(depth[None,None], (h1, w1)).squeeze()
         depth = depth[:h1-h1%8, :w1-w1%8]
 
+        """flow experiment start"""
+        gt_depth = torch.as_tensor(gt_depth)
+        gt_depth = F.interpolate(gt_depth[None,None], (h1, w1)).squeeze()
+        gt_depth = gt_depth[:h1-h1%8, :w1-w1%8]
+
+        gt_pose = torch.as_tensor(gt_pose)
+        """flow experiment end"""
+
         intrinsics = torch.as_tensor([fx, fy, cx, cy])
         intrinsics[0::2] *= (w1 / w0)
         intrinsics[1::2] *= (h1 / h0)
 
+
         if use_depth:
-            yield t, image[None], depth, intrinsics
+            yield t, image[None], depth, intrinsics, gt_pose, gt_depth
 
         else:
             yield t, image[None], intrinsics
@@ -78,33 +151,54 @@ if __name__ == '__main__':
     parser.add_argument("--backend_thresh", type=float, default=22.0)
     parser.add_argument("--backend_radius", type=int, default=2)
     parser.add_argument("--backend_nms", type=int, default=3)
+    parser.add_argument("--upsample", action="store_true")
+    parser.add_argument("--reconstruction_path", help="path to saved reconstruction")
+    parser.add_argument("--without_depth", action="store_true")
+    parser.add_argument("--pixelformer", action="store_true")
+    
+
     args = parser.parse_args()
 
     torch.multiprocessing.set_start_method('spawn')
-
-    print("Running evaluation on {}".format(args.datapath))
-    print(args)
+    print("\n\n")
+    print("Running evaluation on {}".format(args.datapath),end="\n\n")
+    print("args = ",args,end="\n\n")
 
     # this can usually be set to 2-3 except for "camera_shake" scenes
     # set to 2 for test scenes
     stride = 1
 
     tstamps = []
-    for (t, image, depth, intrinsics) in tqdm(image_stream(args.datapath, use_depth=True, stride=stride)):
+    for (t, image, depth, intrinsics, gt_pose, gt_depth) in tqdm(image_stream(args.datapath, use_depth=True, stride=stride, use_pred_depth = args.pixelformer)):
         if not args.disable_vis:
             show_image(image[0])
 
         if t == 0:
             args.image_size = [image.shape[2], image.shape[3]]
             droid = Droid(args)
-        
-        droid.track(t, image, depth, intrinsics=intrinsics)
-    
+        if args.without_depth:
+            
+            droid.track(t, image, intrinsics=intrinsics, gt_pose = gt_pose, gt_depth = gt_depth)
+        else:
+            # print("t = ",t)    
+            droid.track(t, image, depth, intrinsics=intrinsics, gt_pose = gt_pose, gt_depth = gt_depth)
+
     traj_est = droid.terminate(image_stream(args.datapath, use_depth=False, stride=stride))
 
+
+
     ### run evaluation ###
+    if args.without_depth:
+        mode = "Without depth!! Just using RGB"
+    elif args.pixelformer:
+        mode = "Using predicted depth"
+    else: 
+        mode = "Using GT depth"
+    print("#"*20 + " Evaluation mode: " + mode + "#"*20)
+
 
     print("#"*20 + " Results...")
+
 
     import evo
     from evo.core.trajectory import PoseTrajectory3D
@@ -128,7 +222,11 @@ if __name__ == '__main__':
     traj_ref, traj_est = sync.associate_trajectories(traj_ref, traj_est)
 
     result = main_ape.ape(traj_ref, traj_est, est_name='traj', 
-        pose_relation=PoseRelation.translation_part, align=True, correct_scale=False)
+        pose_relation=PoseRelation.translation_part, align=True, correct_scale=True) #originally correct_scale was False
 
-    print(result.stats)
+    #print(result.stats)
+    print(result)
+
+
+
 

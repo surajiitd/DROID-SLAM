@@ -1,4 +1,7 @@
-a# Byte-compiled / optimized / DLL files
+# this code specific (DROID-SLAM)
+
+
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
@@ -154,5 +157,8 @@ cache
 *.o
 data
 figures/*.pdf
+srj_eval_logs
+srj_debug_outputs
+output_imgs
 
 

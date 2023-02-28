@@ -5,7 +5,6 @@ from lietorch import SO3, SE3, Sim3
 from .graph_utils import graph_to_edge_list
 from .projective_ops import projective_transform
 
-
 def pose_metrics(dE):
     """ Translation/Rotation/Scaling metrics from Sim3 """
     t, q, s = dE.data.split([3, 4, 1], -1)
@@ -17,7 +16,6 @@ def pose_metrics(dE):
     s_err = (s - 1.0).abs()
     return r_err, t_err, s_err
 
-
 def fit_scale(Ps, Gs):
     b = Ps.shape[0]
     t1 = Ps.data[...,:3].detach().reshape(b, -1)
@@ -26,27 +24,29 @@ def fit_scale(Ps, Gs):
     s = (t1*t2).sum(-1) / ((t2*t2).sum(-1) + 1e-8)
     return s
 
-
 def geodesic_loss(Ps, Gs, graph, gamma=0.9, do_scale=True):
     """ Loss function for training network """
 
     # relative pose
     ii, jj, kk = graph_to_edge_list(graph)
-    dP = Ps[:,jj] * Ps[:,ii].inv()
-
+    dP = Ps[:,jj] * Ps[:,ii].inv()  # Ps.tangent_shape = torch.Size([1, 7, 6])
+    """
+    Ps[:,jj].tangent_shape = torch.Size([1, 24, 6])         .... 24 is the #edges
+    Ps[:,jj].inv().tangent_shape = torch.Size([1, 24, 6])"""
+    # poses from how many iterations of convGRU
     n = len(Gs)
     geodesic_loss = 0.0
 
     for i in range(n):
         w = gamma ** (n - i - 1)
-        dG = Gs[i][:,jj] * Gs[i][:,ii].inv()
+        dG = Gs[i][:,jj] * Gs[i][:,ii].inv()  # dG.tangent_shape = torch.Size([1, 24, 6])
 
         if do_scale:
-            s = fit_scale(dP, dG)
+            s = fit_scale(dP, dG)  
             dG = dG.scale(s[:,None])
         
         # pose error
-        d = (dG * dP.inv()).log()
+        d = (dG * dP.inv()).log()  # dG.tangent_shape = dP.inv().tangent_shape = torch.Size([1, 24, 6])
 
         if isinstance(dG, SE3):
             tau, phi = d.split([3,3], dim=-1)
@@ -105,8 +105,11 @@ def flow_loss(Ps, disps, poses_est, disps_est, intrinsics, graph, gamma=0.9):
         w = gamma ** (n - i - 1)
         coords1, val1 = projective_transform(poses_est[i], disps_est[i], intrinsics, ii, jj)
 
-        v = (val0 * val1).squeeze(dim=-1)
-        epe = v * (coords1 - coords0).norm(dim=-1)
+        v = (val0 * val1).squeeze(dim=-1) # ex of val0's shape : torch.Size([1, 36, 43, 70, 1])  [batch, N, H, W, 1] N is # of images
+        # coords1 is the flow field from predicted poses and depths.        coords1.shape = torch.Size([1, 12, 384, 512, 2])
+        # coords0 is the flow field from ground truth poses and depths.     coords0.shape = torch.Size([1, 12, 384, 512, 2])
+        epe = v * (coords1 - coords0).norm(dim=-1)  # ex of corrds1's shape : torch.Size([1, 36, 43, 70, 2])
+        # after above line: epe's shape = torch.Size([1, 36, 43, 70])
         flow_loss += w * epe.mean()
 
     epe = epe.reshape(-1)[v.reshape(-1) > 0.5]
