@@ -82,9 +82,10 @@ class Droid:
         print("#" * 32)
         self.backend(7)
 
-        torch.cuda.empty_cache()
+        torch.cuda.empty_cache()  # here memory get freed up from 14.7GB to 3.7GB or (10.52GB to 3.7GB in the next run of same sequence.)
         print("#" * 32)
         self.backend(12)
 
         camera_trajectory = self.traj_filler(stream)
         return camera_trajectory.inv().data.cpu().numpy()
+        

@@ -8,7 +8,7 @@ from factor_graph import FactorGraph
 
 class DroidFrontend:
     def __init__(self, net, video, args):
-        self.video = video
+        self.video = video  # don't create new object, use the same one as in depth_video
         self.update_op = net.update
         self.graph = FactorGraph(
             video, net.update, max_factors=48, upsample=args.upsample)
@@ -46,7 +46,7 @@ class DroidFrontend:
             self.graph.rm_factors(self.graph.age > self.max_age, store=True)
 
         # Add proximity edges to the graph based on the current frame
-        # it also uses self.disps inside distance() function inside it.
+        # it also uses poses and disps inside distance() function inside it.
         self.graph.add_proximity_factors(self.t1-5, max(self.t1-self.frontend_window, 0),
                                          rad=self.frontend_radius, nms=self.frontend_nms, thresh=self.frontend_thresh, beta=self.beta, remove=True)
 
@@ -63,7 +63,7 @@ class DroidFrontend:
         # set initial pose for next frame
         poses = SE3(self.video.poses)
         
-        # Check if the current frame is a keyframe or not
+        # Check if the current frame is a keyframe or not So in distance() func passing ii and jj as just one one element.
         d = self.video.distance(
             [self.t1-3], [self.t1-2], beta=self.beta, bidirectional=True)
 

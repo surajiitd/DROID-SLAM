@@ -16,6 +16,7 @@ import geom.projective_ops as pops
 from geom.graph_utils import graph_to_edge_list, keyframe_indicies
 
 from torch_scatter import scatter_mean
+from sys import getsizeof
 
 
 def cvx_upsample(data, mask):
@@ -36,6 +37,7 @@ def cvx_upsample(data, mask):
     return up_data
 
 def upsample_disp(disp, mask):
+    #while training, my upsample_mask is predicted from n/w
     batch, num, ht, wd = disp.shape
     disp = disp.view(batch*num, ht, wd, 1)
     mask = mask.view(batch*num, -1, ht, wd)
@@ -159,7 +161,8 @@ class UpdateModule(nn.Module):
 
         if ii is not None:
             """Took from Paper: 
-            pool(scatter_mean) the hidden state over all features which share the same source view i and predict a pixel-wise damping factor λ (eta here).
+            pool(scatter_mean) the hidden state over all features which share the same source view i and 
+            predict a pixel-wise damping factor λ ("eta" here, and "damping" in other .py files, and again "eta" in cuda code).
             Additionally, we use the pooled features to predict a 8x8 mask which can be used to upsample the inverse depth estimate."""
             eta, upmask = self.agg(net, ii.to(net.device))
             return net, delta, weight, eta, upmask
@@ -223,7 +226,7 @@ class DroidNet(nn.Module):
         coords0 = pops.coords_grid(ht//8, wd//8, device=images.device)
 
         """ 
-        this function map points from fram_ii -> frame_jj 
+        this function map points from frame_ii -> frame_jj 
         coords1 is dense correspondence field. [ which can be used to calc the induced flow by (induced_flow = coords1 - coords0)]
         """
 

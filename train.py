@@ -1,3 +1,7 @@
+#by suraj
+from distutils.version import LooseVersion
+##
+
 import sys
 sys.path.append('droid_slam')
 
@@ -23,6 +27,11 @@ from logger import Logger
 import torch.multiprocessing as mp
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
+
+# to print warning as error
+# import warnings
+# warnings.filterwarnings("error")
+
 
 
 def setup_ddp(gpu, args):
@@ -105,6 +114,8 @@ def train(gpu, args):
                 r = rng.random()
                 
                 intrinsics0 = intrinsics / 8.0
+                
+                # DroidNet's forward() called here
                 poses_est, disps_est, residuals = model(Gs, images, disp0, intrinsics0, 
                     graph, num_steps=args.iters, fixedp=2)
 
@@ -146,7 +157,7 @@ def train(gpu, args):
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--name', default='bla', help='name your experiment')
+    parser.add_argument('--name', default='reproduce', help='name your experiment')
     parser.add_argument('--ckpt', help='checkpoint to restore')
     parser.add_argument('--datasets', nargs='+', help='lists of datasets for training')
     parser.add_argument('--datapath', default='datasets/TartanAir', help="path to dataset directory")

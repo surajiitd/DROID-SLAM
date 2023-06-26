@@ -51,8 +51,8 @@ def read_groundtruth(filename):
             continue
         data = line.split()
         #timestamp = int(data[0])
-        tx, ty, tz = [float(x) for x in data[1:4]]
-        qx, qy, qz, qw = [float(x) for x in data[4:]]
+        tx, ty, tz = [float(x) for x in data[0:3]]
+        qx, qy, qz, qw = [float(x) for x in data[3:]]
         gt_poses_list.append([tx, ty, tz, qx, qy, qz, qw])
     
     print("# of gt poses = ", len(gt_poses_list))
@@ -62,15 +62,15 @@ def read_groundtruth(filename):
 
 def image_stream(datapath, use_depth=False, stride=1, use_pred_depth = False):
     """ image generator """
-
-    fx, fy, cx, cy = np.loadtxt(os.path.join(datapath, 'calibration.txt')).tolist()
-    image_list = sorted(glob.glob(os.path.join(datapath, 'rgb', '*.png')))[::stride]
+    fx,fy,cx,cy = 585,585,320,240 #wrong mostly ...given in website for default intrinsics for the depth camera
+    #fx, fy, cx, cy = np.loadtxt(os.path.join(datapath, 'calibration.txt')).tolist()
+    image_list = sorted(glob.glob(os.path.join(datapath, '*color.png')))[::stride]
     if use_pred_depth:
         max_depth_threshold = ""
-        depth_list = sorted(glob.glob(os.path.join(datapath, f'pixelformer_depth{max_depth_threshold}', '*.png')))[::stride]
+        depth_list = sorted(glob.glob(os.path.join(datapath, f'pixelformer_depth{max_depth_threshold}', '*depth.png')))[::stride]
     else:    
-        depth_list = sorted(glob.glob(os.path.join(datapath, 'depth', '*.png')))[::stride]
-    gt_depth_list = sorted(glob.glob(os.path.join(datapath, 'depth', '*.png')))[::stride]
+        depth_list = sorted(glob.glob(os.path.join(datapath, '*depth.png')))[::stride]
+    gt_depth_list = sorted(glob.glob(os.path.join(datapath, '*depth.png')))[::stride]
     print(" # of images and depths = ", len(image_list), len(depth_list))
     # gt_poses_list = read_groundtruth(os.path.join(args.datapath, "groundtruth_exact_in_number.txt"))
     gt_poses_list = read_groundtruth(os.path.join(args.datapath, "groundtruth.txt"))
@@ -92,35 +92,35 @@ def image_stream(datapath, use_depth=False, stride=1, use_pred_depth = False):
             #print_minmax(depth,"pred_depth")
             #sys.exit(0)
         else:
-            depth = cv2.imread(depth_file, -1) / 5000.0  # cv2.IMREAD_ANYDEPTH
+            depth = cv2.imread(depth_file, -1) / 1000.0  # cv2.IMREAD_ANYDEPTH
             #print_minmax(depth,"gt_depth")
             #sys.exit(0)
-        gt_depth = cv2.imread(gt_depth_file, -1) / 5000.0  # cv2.IMREAD_ANYDEPTH
+        gt_depth = cv2.imread(gt_depth_file, -1) / 1000.0  # cv2.IMREAD_ANYDEPTH
             
 
         h0, w0, _ = image.shape
         h1 = int(h0 * np.sqrt((384 * 512) / (h0 * w0)))
         w1 = int(w0 * np.sqrt((384 * 512) / (h0 * w0)))
 
-        image = cv2.resize(image, (w1, h1))
-        image = image[:h1-h1%8, :w1-w1%8]
+        # image = cv2.resize(image, (w1, h1))
+        # image = image[:h1-h1%8, :w1-w1%8]
         image = torch.as_tensor(image).permute(2, 0, 1)
         
         depth = torch.as_tensor(depth)
-        depth = F.interpolate(depth[None,None], (h1, w1)).squeeze()
-        depth = depth[:h1-h1%8, :w1-w1%8]
+        # depth = F.interpolate(depth[None,None], (h1, w1)).squeeze()
+        # depth = depth[:h1-h1%8, :w1-w1%8]
 
         """flow experiment start"""
         gt_depth = torch.as_tensor(gt_depth)
-        gt_depth = F.interpolate(gt_depth[None,None], (h1, w1)).squeeze()
-        gt_depth = gt_depth[:h1-h1%8, :w1-w1%8]
+        # gt_depth = F.interpolate(gt_depth[None,None], (h1, w1)).squeeze()
+        # gt_depth = gt_depth[:h1-h1%8, :w1-w1%8]
 
         gt_pose = torch.as_tensor(gt_pose)
         """flow experiment end"""
 
         intrinsics = torch.as_tensor([fx, fy, cx, cy])
-        intrinsics[0::2] *= (w1 / w0)
-        intrinsics[1::2] *= (h1 / h0)
+        # intrinsics[0::2] *= (w1 / w0)
+        # intrinsics[1::2] *= (h1 / h0)
 
 
         if use_depth:

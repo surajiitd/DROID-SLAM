@@ -61,8 +61,8 @@ def schur_solve(H, E, C, v, w, ep=0.1, lm=0.0001, sless=False):
     B, P, M, D, HW = E.shape  # E.shape = torch.Size([1, 5, 7, 6, 3072])
     # P: number of camera poses to update, 
     # D: number of parameters per pose,     .... So, P*D would be the total # camera parameters to update
-    # M: number of depth-maps to update, 
-    # HW: number of pixels                  .... So, M*HW would be the total # depth parameters to update
+    # M: number of depthmaps to update, 
+    # HW: number of pixels per depthmap      .... So, M*HW would be the total # depth parameters to update
 
     H = H.permute(0,1,3,2,4).reshape(B, P*D, P*D)
     E = E.permute(0,1,3,2,4).reshape(B, P*D, M*HW)
@@ -70,8 +70,8 @@ def schur_solve(H, E, C, v, w, ep=0.1, lm=0.0001, sless=False):
     Q = (1.0 / C).view(B, M*HW, 1)
 
     #orig comment:  damping
-    I = torch.eye(P*D).to(H.device)  # P*D would be the total # camera parameters to update
-    # added ep and lm*H to H 
+    I = torch.eye(P*D).to(H.device)  # = the size of H ... PD would be the total # camera parameters to update
+    # added ep and lm*H to diagonal of H [damping]
     H = H + (ep + lm*H) * I
     
     v = v.reshape(B, P*D, 1)
@@ -80,15 +80,16 @@ def schur_solve(H, E, C, v, w, ep=0.1, lm=0.0001, sless=False):
     Et = E.transpose(1,2)
 
     # S is schur complement of C in the Block matrix. Notation of below H is B in my equations(BA paper)
-    S = H - torch.matmul(E, Q*Et)
+    S = H - torch.matmul(E, Q*Et)  # E.shape = torch.Size([1, 30, 21504]) and Q.shape = torch.Size([1, 21504, 1]) and Et.shape = torch.Size([1, 21504, 30])
     v = v - torch.matmul(E, Q*w)
 
     # takes matrix to be inverted S and vector b (v here)
-    dx = CholeskySolver.apply(S, v)
+    dx = CholeskySolver.apply(S, v) # here dx.shape = torch.Size([1, 30, 1])
     if sless:
         return dx.reshape(B, P, D)
 
-    dz = Q * (w - Et @ dx)    
+    dz = Q * (w - Et @ dx)  # here dz.shape = torch.Size([1, 21504, 1])  ... 21504 = 7*3072 = 7*48*64
+    #reshape the delta vectors.
     dx = dx.reshape(B, P, D)
     dz = dz.reshape(B, M, HW)
 

@@ -77,11 +77,12 @@ def geodesic_loss(Ps, Gs, graph, gamma=0.9, do_scale=True):
 def residual_loss(residuals, gamma=0.9):
     """ loss on system residuals """
     residual_loss = 0.0
-    n = len(residuals)
+    n = len(residuals) # no. of times convGRU is applied
 
     for i in range(n):
         w = gamma ** (n - i - 1)
-        residual_loss += w * residuals[i].abs().mean()
+        residual_loss += w * residuals[i].abs().mean()   # size of residuals[i] = torch.Size([1, 22, 48, 64, 2])  [batch, #edges, H, W, 2] 
+        # So in above line a single scaler mean is calculated(as loss) for residual of all the edges(pairs of images)
 
     return residual_loss, {'residual': residual_loss.item()}
 

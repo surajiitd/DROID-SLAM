@@ -19,7 +19,6 @@ class CorrSampler(torch.autograd.Function):
         grad_volume, = droid_backends.corr_index_backward(volume, coords, grad_output, ctx.radius)
         return grad_volume, None, None
 
-
 class CorrBlock:
     def __init__(self, fmap1, fmap2, num_levels=4, radius=3):
         self.num_levels = num_levels
@@ -27,15 +26,16 @@ class CorrBlock:
         self.corr_pyramid = []
 
         # all pairs correlation
-        corr = CorrBlock.corr(fmap1, fmap2)
+        corr = CorrBlock.corr(fmap1, fmap2) # check how many fmap1 are coming here, just 1 or for all edges ??? for one sometimes(from motion_filter) .... and for all edge sometimes(from update of frontend)
 
         batch, num, h1, w1, h2, w2 = corr.shape
         corr = corr.reshape(batch*num*h1*w1, 1, h2, w2)
-        
+
+        # Building correlation pyramid.
         for i in range(self.num_levels):
             self.corr_pyramid.append(
                 corr.view(batch*num, h1, w1, h2//2**i, w2//2**i))
-            corr = F.avg_pool2d(corr, 2, stride=2)
+            corr = F.avg_pool2d(corr, 2, stride=2) # before corr.shape = [110592, 1, 48, 64] ... after corr.shape = [110592, 1, 24, 32]
             
     def __call__(self, coords):
         out_pyramid = []
@@ -53,6 +53,8 @@ class CorrBlock:
     def cat(self, other):
         for i in range(self.num_levels):
             self.corr_pyramid[i] = torch.cat([self.corr_pyramid[i], other.corr_pyramid[i]], 0)
+            #print(f"\nAdding {other.corr_pyramid[i].shape[0]} Edges in graph")
+            #print(f"\nNow {self.corr_pyramid[i].shape[0]} Edges are in graph",)
         return self
 
     def __getitem__(self, index):
@@ -68,7 +70,8 @@ class CorrBlock:
         fmap1 = fmap1.reshape(batch*num, dim, ht*wd) / 4.0
         fmap2 = fmap2.reshape(batch*num, dim, ht*wd) / 4.0
         
-        corr = torch.matmul(fmap1.transpose(1,2), fmap2)
+        corr = torch.matmul(fmap1.transpose(1,2), fmap2) # after running this line additional 2GB of GPU memory gets used.
+        # corr is of 2GB for 36 edges.
         return corr.view(batch, num, ht, wd, ht, wd)
 
 

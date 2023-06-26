@@ -81,8 +81,7 @@ def save_reconstruction(droid, reconstruction_path):
     poses = droid.video.poses[:t].cpu().numpy()
     intrinsics = droid.video.intrinsics[:t].cpu().numpy()
 
-    Path("reconstructions/{}".format(reconstruction_path)
-         ).mkdir(parents=True, exist_ok=True)
+    Path("reconstructions/{}".format(reconstruction_path)).mkdir(parents=True, exist_ok=True)
     np.save("reconstructions/{}/tstamps.npy".format(reconstruction_path), tstamps)
     np.save("reconstructions/{}/images.npy".format(reconstruction_path), images)
     np.save("reconstructions/{}/disps.npy".format(reconstruction_path), disps)
@@ -135,7 +134,7 @@ if __name__ == '__main__':
         if not args.disable_vis:
             show_image(image[0])
 
-        save_image(image[0], counter_var)  # by Suraj
+        #save_image(image[0], counter_var)  # by Suraj
         counter_var += 1
 
         if droid is None:

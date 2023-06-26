@@ -31,7 +31,8 @@ def image_stream(datapath, image_size=[320, 512]):
     # read all png images in folder
     images_list = sorted(
         glob.glob(os.path.join(datapath, 'rgb', '*.png')))[::2]
-
+    
+    #print(len(images_list))
     for t, imfile in enumerate(images_list):
         image = cv2.imread(imfile)
         ht0, wd0, _ = image.shape
@@ -108,7 +109,7 @@ if __name__ == '__main__':
     image_path = os.path.join(args.datapath, 'rgb')
     images_list = sorted(glob.glob(os.path.join(image_path, '*.png')))[::2]
     tstamps = [float(x.split('/')[-1][:-4]) for x in images_list]
-
+    
     traj_est = PoseTrajectory3D(
         positions_xyz=traj_est[:, :3],
         orientations_quat_wxyz=traj_est[:, 3:],

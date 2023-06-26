@@ -50,12 +50,9 @@ class DepthVideo:
         c = 1 if not self.stereo else 2
 
         ### feature attributes ###
-        self.fmaps = torch.zeros(
-            buffer, c, 128, ht//8, wd//8, dtype=torch.half, device="cuda").share_memory_()
-        self.nets = torch.zeros(buffer, 128, ht//8, wd//8,
-                                dtype=torch.half, device="cuda").share_memory_()
-        self.inps = torch.zeros(buffer, 128, ht//8, wd//8,
-                                dtype=torch.half, device="cuda").share_memory_()
+        self.fmaps = torch.zeros(buffer, c, 128, ht//8, wd//8, dtype=torch.half, device="cuda").share_memory_()
+        self.nets = torch.zeros(buffer, 128, ht//8, wd//8,dtype=torch.half, device="cuda").share_memory_()
+        self.inps = torch.zeros(buffer, 128, ht//8, wd//8,dtype=torch.half, device="cuda").share_memory_()
 
         # initialize poses to identity transformation
         self.poses[:] = torch.as_tensor(
@@ -77,6 +74,7 @@ class DepthVideo:
 
         elif isinstance(index, torch.Tensor) and index.max().item() > self.counter.value:
             self.counter.value = index.max().item() + 1
+        #print("\tself.counter.value = ",self.counter.value)
 
         # self.dirty[index] = True
         self.tstamp[index] = item[0]
@@ -216,13 +214,14 @@ class DepthVideo:
                 distance b/w the frames specified by ii and jj. It'll compute a 1d tensor of length len(ii). return_matrix=False in that case.
         
         ###called a CUDA kernel.###
-        In paper they said that distance is mean optical ﬂow.
+        In paper they said that distance is mean optical ﬂow b/w those 2 frames.
         """
-
+        #print("ii and jj are: ", ii, jj)
         return_matrix = False  # otherwise it'll return a 1d tensor.
         if ii is None:
             return_matrix = True
             N = self.counter.value
+            #print("Making NxN matrix, with N = self.counter.value = ", N)
             ii, jj = torch.meshgrid(torch.arange(N), torch.arange(N))
 
         ii, jj = DepthVideo.format_indicies(ii, jj)
@@ -245,7 +244,7 @@ class DepthVideo:
 
         if return_matrix:
             return d.reshape(N, N)
-
+        #print("d.shape =", d.shape, "ii.shape = ", ii.shape)
         return d
 
     def ba(self, target, weight, eta, ii, jj, t0=1, t1=None, itrs=2, lm=1e-4, ep=0.1, motion_only=False):

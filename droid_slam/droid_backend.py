@@ -30,7 +30,7 @@ class DroidBackend:
             self.video.normalize()
 
         graph = FactorGraph(self.video, self.update_op,
-                            corr_impl="alt", max_factors=16*t, upsample=self.upsample)
+                            corr_impl="alt", max_factors=16*t, upsample=self.upsample) # No extra GPU memory got created in this step
 
         """ add edges to the factor graph based on distance """
         graph.add_proximity_factors(rad=self.backend_radius,
@@ -38,6 +38,6 @@ class DroidBackend:
                                     thresh=self.backend_thresh,
                                     beta=self.beta)
 
-        graph.update_lowmem(steps=steps)
+        graph.update_lowmem(steps=steps) # No extra GPU memory got created in this step
         graph.clear_edges()
         self.video.dirty[:t] = True

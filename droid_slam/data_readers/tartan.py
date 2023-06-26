@@ -37,6 +37,7 @@ class TartanAir(RGBDDataset):
         scene_info = {}
         scenes = glob.glob(osp.join(self.root, '*/*/*/*'))
         for scene in tqdm(sorted(scenes)):
+            #print(scene)
             images = sorted(glob.glob(osp.join(scene, 'image_left/*.png')))
             depths = sorted(glob.glob(osp.join(scene, 'depth_left/*.npy')))
             
@@ -76,7 +77,9 @@ class TartanAirStream(RGBDStream):
 
     def _build_dataset_index(self):
         """ build list of images, poses, depths, and intrinsics """
-        self.root = 'datasets/TartanAir'
+        #by suraj
+        #self.root = 'datasets/TartanAir'
+        self.root = 'data/TartanAir_mount'
 
         scene = osp.join(self.root, self.datapath)
         image_glob = osp.join(scene, 'image_left/*.png')

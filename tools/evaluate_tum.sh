@@ -1,7 +1,8 @@
 #!/bin/bash
 
 
-TUM_PATH=datasets/TUM-RGBD/$seq
+#TUM_PATH=../Datasets/TUM_RGBD/$seq
+TUM_PATH=../Datasets/TUM_RGBD/extracted
 
 evalset=(
     rgbd_dataset_freiburg1_360
@@ -16,6 +17,8 @@ evalset=(
 )
 
 for seq in ${evalset[@]}; do
-    python evaluation_scripts/test_tum.py --datapath=$TUM_PATH/$seq --weights=droid.pth --disable_vis $@
+    #python evaluation_scripts/test_tum.py --datapath=$TUM_PATH/$seq --weights=droid.pth --disable_vis $@
+    #echo "with my weights"
+    python evaluation_scripts/test_tum.py --datapath=$TUM_PATH/$seq --weights=checkpoints/reproduce_250000.pth --disable_vis $@
 done
 

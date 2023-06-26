@@ -88,8 +88,6 @@ class FactorGraph:
         self.rm_factors(self.ii >= 0)
         self.net = None
         self.inp = None
-
-
     @torch.cuda.amp.autocast(enabled=True) #True: It allows computations to be performed in lower-precision formats for improved performance. 
     def add_factors(self, ii, jj, remove=False): # OR add_edges()
         """ add edges to factor graph """
@@ -105,38 +103,42 @@ class FactorGraph:
 
         if ii.shape[0] == 0:
             return
-
         """place limit on number of factors:
         If there is a limit on the number of edges in the graph, 
         and the number of edges plus the new edges would exceed this limit, 
         then remove some existing edges so that the limit is not exceeded.
         """
+        # will not go inside this while initialisation of frontend ... because remove == False ... but will go inside in update() of frontend.
         if self.max_factors > 0 and self.ii.shape[0] + ii.shape[0] > self.max_factors \
                 and self.corr is not None and remove:
 
             ix = torch.arange(len(self.age))[torch.argsort(self.age).cpu()]
             self.rm_factors(ix >= self.max_factors - ii.shape[0], store=True)
 
-        net = self.video.nets[ii].to(self.device).unsqueeze(0)
+        net = self.video.nets[ii].to(self.device).unsqueeze(0)  # self.video.nets.shape = torch.Size([512, 128, 48, 64]) ... But we take duplicates now (by indexing using ii)
 
         # save correlation pyramids for new edges
-        if self.corr_impl == "volume":
+        if self.corr_impl == "volume": # so in backend self.corr and self.inp tensors are not created.
+            # this section will not get called in Backend (corr_impl="alt") ... So no memory for correlation vol is used in backend.
             c = (ii == jj).long()
-            fmap1 = self.video.fmaps[ii, 0].to(self.device).unsqueeze(0)
-            fmap2 = self.video.fmaps[jj, c].to(self.device).unsqueeze(0)
+            fmap1 = self.video.fmaps[ii, 0].to(self.device).unsqueeze(0)  # uses 27MB for 36 edges' fmap
+            fmap2 = self.video.fmaps[jj, c].to(self.device).unsqueeze(0) # same...
 
             # correlation pyramid for all the new edges(frame pairs) is computed using just below line. 
             # one dim is reserved for which edge it is. ex: corr-pyramid[0]'s size was [1, 36, 48, 64, 48, 64] 
             # when ii and jj's shape here is : torch.Size([36]) when I first enter this line of code.
             corr = CorrBlock(fmap1, fmap2)
-
+            
+            # print(f"\nAdding {fmap1.shape[1]} Edges in graph") #fmap1.shape = torch.Size([1, 36, 128, 48, 64]) when 36 new edges are getting added in graph.
             # append correlation volumes for new edges in self.corr
+            #DEBUG: check for how many edges does it store corr-pyramid with increasing #frames. $ print(self.corr.corr_pyramid[0].shape)
             self.corr = corr if self.corr is None else self.corr.cat(corr)
-
+            current_edges = self.corr.corr_pyramid[0].shape[0]  # current_edges in graph.
+            # print(f"Now {current_edges} Edges are in graph",)
+            
             # append inp for new edges in self.inp
             inp = self.video.inps[ii].to(self.device).unsqueeze(0)
-            self.inp = inp if self.inp is None else torch.cat(
-                [self.inp, inp], 1)
+            self.inp = inp if self.inp is None else torch.cat([self.inp, inp], 1)
 
         with torch.cuda.amp.autocast(enabled=False): #False: means full precision...It doesn't allows lower-precision computations.
 
@@ -144,12 +146,20 @@ class FactorGraph:
             # ex: target's size = torch.Size([1, 36, 48, 64, 2])
             #     when ii and jj's shape here is : torch.Size([36]) when I first enter this line of code.
             target, _ = self.video.reproject(ii, jj)
+            
             # weight's size = torch.Size([1, 36, 48, 64, 2])
             weight = torch.zeros_like(target)
         
         #append ii(starting node) and jj(target node) for new edges in self.ii and self.jj
+        # if self.corr_impl != "volume": 
+        #     print(f"\nAdding {ii.shape[0]} Edges in graph")
+
         self.ii = torch.cat([self.ii, ii], 0)
         self.jj = torch.cat([self.jj, jj], 0)
+
+        # if self.corr_impl != "volume": 
+        #     print(f"Now {self.ii.shape[0]} Edges are in graph",)
+
         self.age = torch.cat([self.age, torch.zeros_like(ii)], 0)
 
         # reprojection factors
@@ -175,22 +185,27 @@ class FactorGraph:
                 [self.target_inac, self.target[:, mask]], 1)
             self.weight_inac = torch.cat(
                 [self.weight_inac, self.weight[:, mask]], 1)
-
+        
+        # print(f"\nDeleting {np.sum(mask.clone().detach().cpu().numpy())} edges.")
+        # print(f"Now {np.sum(~mask.clone().detach().cpu().numpy())} edges are in graph.")
         self.ii = self.ii[~mask]
         self.jj = self.jj[~mask]
         self.age = self.age[~mask]
 
-        if self.corr_impl == "volume":
+        if self.corr_impl == "volume": # if frontend(corr_impl="volume") then only need to clear corr volume, otherwise there is not self.corr variable itself in backend.
             self.corr = self.corr[~mask]
 
         if self.net is not None:
             self.net = self.net[:, ~mask]
 
-        if self.inp is not None:
+        if self.inp is not None: # it is None in backend
             self.inp = self.inp[:, ~mask]
 
         self.target = self.target[:, ~mask]
         self.weight = self.weight[:, ~mask]
+
+        # added by me to see if the correlation-volume for deleted edges was remaining still in memory...
+        torch.cuda.empty_cache()
 
 
     @torch.cuda.amp.autocast(enabled=True)
@@ -300,6 +315,7 @@ class FactorGraph:
         t = self.video.counter.value
 
         num, rig, ch, ht, wd = self.video.fmaps.shape
+
         corr_op = AltCorrBlock(self.video.fmaps.view(1, num*rig, ch, ht, wd))
 
         for step in range(steps):
@@ -333,8 +349,7 @@ class FactorGraph:
                 self.weight[:, v] = weight.float()
                 self.damping[torch.unique(iis)] = damping
 
-            damping = .2 * \
-                self.damping[torch.unique(self.ii)].contiguous() + EP
+            damping = .2 * self.damping[torch.unique(self.ii)].contiguous() + EP # EP=1e-7
             target = self.target.view(-1, ht, wd,2).permute(0, 3, 1, 2).contiguous()
             weight = self.weight.view(-1, ht, wd,2).permute(0, 3, 1, 2).contiguous()
 
@@ -360,7 +375,7 @@ class FactorGraph:
         
     def add_proximity_factors(self, t0=0, t1=0, rad=2, nms=2, beta=0.25, thresh=16.0, remove=False):
         """ 
-        add edges to the factor graph based on proximity radius then based on distance(means add edges one by one 
+        add edges to the factor graph based on proximity radius(that is "make edges b/w keyframes that are at least > proximity radius(=3) frames apart) then based on distance(means add edges one by one 
         in sorted order till no. of edges is <= self.max_factors..... 
         i.e: if len(es) > self.max_factors:         break
         
@@ -377,7 +392,7 @@ class FactorGraph:
         jj = jj.reshape(-1)
         d = self.video.distance(ii, jj, beta=beta)
 
-        # make distances as inf that are not within the specified proximity radius.
+        # make adges b/w all previous keyframes that are rad(=3) frames apart. make rest all as infinity.
         d[ii - rad < jj] = np.inf
         d[d > 100] = np.inf
 
@@ -388,7 +403,7 @@ class FactorGraph:
             # the neighboring nodes that are not too close (that's why <=) to each other. 
             for di in range(-nms, nms+1):
                 for dj in range(-nms, nms+1):
-                    if abs(di) + abs(dj) <= max(min(abs(i-j)-2, nms), 0): #ignore max(it is just to ignore negative values)
+                    if abs(di) + abs(dj) <= max(min(abs(i-j)-2, nms), 0): #ignore max() it is just to ignore negative values)
                         i1 = i + di
                         j1 = j + dj
 
@@ -419,8 +434,6 @@ class FactorGraph:
                 es.append((i, j))
                 es.append((j, i))
                 d[(i-t0)*(t-t1) + (j-t1)] = np.inf
-
-
 
         ix = torch.argsort(d)
         # we are traversing and adding edges in sorted order of the distance values of edges.

@@ -74,6 +74,7 @@ def actp(Gij, X0, jacobian=False):
         o = torch.zeros_like(d)
         B, N, H, W = d.shape
         #DEBUG: what is this hardcoded values? are they correct, check somewhere?
+        #ans: given in supplementary...
         if isinstance(Gij, SE3):
             Ja = torch.stack([
                 d,  o,  o,  o,  Z, -Y,
@@ -96,7 +97,10 @@ def actp(Gij, X0, jacobian=False):
 
 def projective_transform(poses, depths, intrinsics, ii, jj, jacobian=False, return_depth=False):
     """ map points from frame_ii->frame_jj  (ii to jj is an edge in covisibility graph)
-     it'll find the correspondence-field (corresponding points of frame_ii in frame_jj )"""
+     it'll find the correspondence-field (corresponding points of frame_ii in frame_jj )
+     ii.shape = torch.Size([24])
+     jj.shape = torch.Size([24])
+     """
 
     # inverse project (pinhole)
     X0, Jz = iproj(depths[:,ii], intrinsics[:,ii], jacobian=jacobian)
