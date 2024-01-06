@@ -15,6 +15,7 @@ Make a new conda environment, install these in given order:
 - `python setup.py install` (for installing in A100 GPUS: comment out the last line of the setup.py that was installing for 'sm_86' aarchitecture... A100 is based on sm_80, but it also supports all earlier ones.)
     - if you want to make any changes in the ba_cuda() code, then after making those changes in droid_kernels.cu, you need to do `python setup.py install` from the conda env in which you want to install the changed version. 
     **Note:** it doesn't depend on which repo(you can have DROID-SLAM code at multiple locations). It just depend on from which conda env you run the program. So the installed libraries after `python setup.py install` goes to the conda env path.
+    - So while running from vscode's debugger, you need to make sure that you are running from the desired conda env.
 
 - `pip install torch-scatter==2.0.9` (as this version is also in my earleir env: `droid_novis2`)
 
