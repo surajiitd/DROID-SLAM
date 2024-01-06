@@ -156,7 +156,8 @@ class DepthVideo:
 
     def upsample(self, ix, mask):
         """ upsample disparity """
-
+        
+        #upsample pixel-wise transformation field
         disps_up = cvx_upsample(self.disps[ix].unsqueeze(-1), mask)
         self.disps_up[ix] = disps_up.squeeze()
 
@@ -249,6 +250,14 @@ class DepthVideo:
 
     def ba(self, target, weight, eta, ii, jj, t0=1, t1=None, itrs=2, lm=1e-4, ep=0.1, motion_only=False):
         """ 
+        # eta: it is "damping" from where this fun is called(factor_graph's update()).
+        # t0: start of the window
+        # t1: end of the window
+        # itrs: no. of iterations of BA
+        # lm, ep : these parameters are only used in A.solve(lm,ep) where A is an object of SparseBlock class
+        # and the way they are used in eqn(inside solve() of SparseBlock class) are: 
+        # "L.diagonal().array() += ep + lm * L.diagonal().array();"
+        
         dense bundle adjustment (DBA) 
         ###called a CUDA kernel.###
         """
@@ -259,8 +268,10 @@ class DepthVideo:
             if t1 is None:
                 t1 = max(ii.max().item(), jj.max().item()) + 1
 
-            #
-                droid_backends.ba(self.poses, self.disps, self.intrinsics[0], self.disps_sens,
-                                  target, weight, eta, ii, jj, t0, t1, itrs, lm, ep, motion_only)
+            # call python ba code here.
+
+
+            droid_backends.ba(self.poses, self.disps, self.intrinsics[0], self.disps_sens,
+                                target, weight, eta, ii, jj, t0, t1, itrs, lm, ep, motion_only)
 
             self.disps.clamp_(min=0.001)

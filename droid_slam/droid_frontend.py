@@ -36,7 +36,7 @@ class DroidFrontend:
     def __update(self):
         """ add edges, perform update """
 
-        self.count += 1    # =1 when first time update is called.
+        self.count += 1    # =1 when first time update is called. # not used anywhere else. it'll count how many times _update() is called
         self.t1 += 1    # =9 when first time update is called.(= warmup + 1)
         # so t1 = 9 , but it's index would be 8. 
         # So current frame is t1-1.
@@ -50,7 +50,7 @@ class DroidFrontend:
         self.graph.add_proximity_factors(self.t1-5, max(self.t1-self.frontend_window, 0),
                                          rad=self.frontend_radius, nms=self.frontend_nms, thresh=self.frontend_thresh, beta=self.beta, remove=True)
 
-        # Update the disparity value for the current frame as sensor's disparity where it is valid.
+        # INITIALIZE the disparity value for the current frame as sensor's disparity where it is valid.
         self.video.disps[self.t1-1] = torch.where(self.video.disps_sens[self.t1-1] > 0,
                                                   self.video.disps_sens[self.t1-1], self.video.disps[self.t1-1])
 
@@ -61,14 +61,18 @@ class DroidFrontend:
 
         
         # set initial pose for next frame
-        poses = SE3(self.video.poses)
+        # poses = SE3(self.video.poses)
         
         # Check if the current frame is a keyframe or not So in distance() func passing ii and jj as just one one element.
         d = self.video.distance(
             [self.t1-3], [self.t1-2], beta=self.beta, bidirectional=True)
 
-        # If the current frame is not a keyframe, remove it from the graph
-        if d.item() < self.keyframe_thresh:
+        # If the previous frame is not a keyframe, remove it from the graph
+        if d.item() < self.keyframe_thresh: 
+            #while adding (t1-2)th frame, it was a keyframe. 
+            # but after some updates, 
+            # it's not fulfilling the same criteria of >= keframe_thresh.
+            # instead it is < keyframe_thresh. so remove it.
             self.graph.rm_keyframe(self.t1 - 2)
 
             with self.video.get_lock():
@@ -93,6 +97,7 @@ class DroidFrontend:
 
         self.t0 = 0 # start of the window
         self.t1 = self.video.counter.value # end of the window
+        # self.video.counter.value is 1-based indexing (means this is = number of keyframes I have got till now) And current index is (t1-1)
 
         """ add edges between neighboring frames within radius r """
         self.graph.add_neighborhood_factors(self.t0, self.t1, r=3)

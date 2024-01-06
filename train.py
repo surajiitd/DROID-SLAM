@@ -182,7 +182,6 @@ if __name__ == '__main__':
     parser.add_argument('--restart_prob', type=float, default=0.2)
 
     args = parser.parse_args()
-
     args.world_size = args.gpus
     print(args)
 
@@ -190,8 +189,8 @@ if __name__ == '__main__':
     if not os.path.isdir('checkpoints'):
         os.mkdir('checkpoints')
 
-    args = parser.parse_args()
-    args.world_size = args.gpus
+    # args = parser.parse_args()
+    # args.world_size = args.gpus
 
     os.environ['MASTER_ADDR'] = 'localhost'
     os.environ['MASTER_PORT'] = '12356'

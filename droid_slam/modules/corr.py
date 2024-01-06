@@ -28,7 +28,7 @@ class CorrBlock:
         # all pairs correlation
         corr = CorrBlock.corr(fmap1, fmap2) # check how many fmap1 are coming here, just 1 or for all edges ??? for one sometimes(from motion_filter) .... and for all edge sometimes(from update of frontend)
 
-        batch, num, h1, w1, h2, w2 = corr.shape
+        batch, num, h1, w1, h2, w2 = corr.shape # num represents the #edges in graph
         corr = corr.reshape(batch*num*h1*w1, 1, h2, w2)
 
         # Building correlation pyramid.

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 
-EUROC_PATH=../Datasets/euroc_mav/ASL
+EUROC_PATH=../../Datasets/euroc_mav/ASL
 
 evalset=(
     MH_01_easy
@@ -18,6 +18,6 @@ evalset=(
 )
 
 for seq in ${evalset[@]}; do
-    python evaluation_scripts/test_euroc.py --datapath=$EUROC_PATH/$seq --gt=data/euroc_groundtruth/$seq.txt --weights=checkpoints/reproduce_250000.pth --disable_vis $@
+    python evaluation_scripts/test_euroc.py --datapath=$EUROC_PATH/$seq --gt=data/euroc_groundtruth/$seq.txt --weights=droid.pth --disable_vis $@
 done
 

@@ -43,7 +43,8 @@ def pose_retr(poses, dx, ii):
 
 def BA(target, weight, eta, poses, disps, intrinsics, ii, jj, fixedp=1, rig=1):
     """ Full Bundle Adjustment """
-    """ INPUT: predicted_flow, confidence_of_predicted_flow, eta, intrinsics, graph(ii,jj) ............. OUTPUT: refined_pose, refined_disps 
+    """ INPUT: predicted_flow, confidence_of_predicted_flow, eta, intrinsics, graph(ii,jj).
+        OUTPUT: refined_pose, refined_disps 
     
     target.shape: torch.Size([1, 24, 48, 64, 2])
     weight.shape: torch.Size([1, 24, 48, 64, 2])

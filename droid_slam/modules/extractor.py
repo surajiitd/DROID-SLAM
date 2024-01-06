@@ -182,7 +182,8 @@ class BasicEncoder(nn.Module):
 
     def forward(self, x):
         b, n, c1, h1, w1 = x.shape
-        x = x.view(b*n, c1, h1, w1)
+        # since conv can't take 5d tensor, it takes (batch_size, channel, height, width)
+        x = x.view(b*n, c1, h1, w1) 
 
         x = self.conv1(x)
         x = self.norm1(x)

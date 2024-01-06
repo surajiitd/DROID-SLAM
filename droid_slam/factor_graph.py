@@ -133,7 +133,7 @@ class FactorGraph:
             # append correlation volumes for new edges in self.corr
             #DEBUG: check for how many edges does it store corr-pyramid with increasing #frames. $ print(self.corr.corr_pyramid[0].shape)
             self.corr = corr if self.corr is None else self.corr.cat(corr)
-            current_edges = self.corr.corr_pyramid[0].shape[0]  # current_edges in graph.
+            #current_edges = self.corr.corr_pyramid[0].shape[0]  # current_edges in graph.
             # print(f"Now {current_edges} Edges are in graph",)
             
             # append inp for new edges in self.inp
@@ -205,7 +205,7 @@ class FactorGraph:
         self.weight = self.weight[:, ~mask]
 
         # added by me to see if the correlation-volume for deleted edges was remaining still in memory...
-        torch.cuda.empty_cache()
+        #torch.cuda.empty_cache()
 
 
     @torch.cuda.amp.autocast(enabled=True)
@@ -250,6 +250,11 @@ class FactorGraph:
     @torch.cuda.amp.autocast(enabled=True)
     def update(self, t0=None, t1=None, itrs=2, use_inactive=False, EP=1e-7, motion_only=False):
         """ run update operator on whole factor graph (covisibility graph) """
+        # t0: start of the window
+        # t1: end of the window
+        # itrs: number of BA iterations.
+        # use_inactive: if True, then use inactive edges also for BA.
+        # EP: small value to avoid division by zero.
         # motion features
         with torch.cuda.amp.autocast(enabled=False):
             coords1, mask = self.video.reproject(self.ii, self.jj) # project points from ii -> jj 
@@ -277,6 +282,11 @@ class FactorGraph:
 
             ht, wd = self.coords0.shape[0:2]
             self.damping[torch.unique(self.ii)] = damping # see later what damping is doing.
+            
+            # BUG: sample
+            # TODO: sample
+            # NOTE: Inorder to call DBA, we are concatenating all the inactive edges also in 
+            # factor graph.
             if use_inactive:
                 m = (self.ii_inac >= t0 - 3) & (self.jj_inac >= t0 - 3)
                 ii = torch.cat([self.ii_inac[m], self.ii], 0)
@@ -375,7 +385,7 @@ class FactorGraph:
         
     def add_proximity_factors(self, t0=0, t1=0, rad=2, nms=2, beta=0.25, thresh=16.0, remove=False):
         """ 
-        add edges to the factor graph based on proximity radius(that is "make edges b/w keyframes that are at least > proximity radius(=3) frames apart) then based on distance(means add edges one by one 
+        add edges to the factor graph based on proximity radius(that is "make edges to keyframes that are at least >= proximity radius(=3) frames old) then based on distance(means add edges one by one 
         in sorted order till no. of edges is <= self.max_factors..... 
         i.e: if len(es) > self.max_factors:         break
         
@@ -392,7 +402,7 @@ class FactorGraph:
         jj = jj.reshape(-1)
         d = self.video.distance(ii, jj, beta=beta)
 
-        # make adges b/w all previous keyframes that are rad(=3) frames apart. make rest all as infinity.
+        # make adges b/w all **previous** keyframes(from ii) that are at rad(=3). make rest all as infinity.
         d[ii - rad < jj] = np.inf
         d[d > 100] = np.inf
 

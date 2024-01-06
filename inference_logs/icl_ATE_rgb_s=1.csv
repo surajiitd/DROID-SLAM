@@ -1,0 +1,2 @@
+Time,Depth Source,Sequence name,#Frames in seq,rmse,max,mean,median,min,sse,std
+2023-06-26 19:46:30.346340,None,living_room_traj0_frei_png,1509,0.058109,0.282695,0.040157,0.025559,0.007489,5.092002,0.042001

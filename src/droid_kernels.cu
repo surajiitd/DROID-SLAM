@@ -1333,9 +1333,9 @@ std::vector<torch::Tensor> ba_cuda(
   const int ht = disps.size(1);
   const int wd = disps.size(2);
 
-  torch::Tensor ts = torch::arange(t0, t1).to(torch::kCUDA);
-  torch::Tensor ii_exp = torch::cat({ts, ii}, 0);
-  torch::Tensor jj_exp = torch::cat({ts, jj}, 0);
+  torch::Tensor ts = torch::arange(t0, t1).to(torch::kCUDA); // index array for the edges of graph.
+  torch::Tensor ii_exp = torch::cat({ts, ii}, 0); // add the index of the edges of ii
+  torch::Tensor jj_exp = torch::cat({ts, jj}, 0);// add the index of the edges of jj
 
   std::tuple<torch::Tensor, torch::Tensor> kuniq = 
     torch::_unique(ii_exp, true, true);

@@ -20,19 +20,23 @@ from sys import getsizeof
 
 
 def cvx_upsample(data, mask):
+    # cvx_upsample is the same function that is used in RAFT to upsample optical flow.
+    # BUT in DROID it is used only to upsample disparity and NOT flow.
     """ upsample pixel-wise transformation field """
     batch, ht, wd, dim = data.shape
     data = data.permute(0, 3, 1, 2)
+    # mask.shape = torch.Size([1, 576, ht, wd]) where 576 = 9*8*8
     mask = mask.view(batch, 1, 9, 8, 8, ht, wd)
     mask = torch.softmax(mask, dim=2)
 
-    """DUBUG: see the size of up_data after unfolding"""
     up_data = F.unfold(data, [3,3], padding=1)
     up_data = up_data.view(batch, dim, 9, 1, 1, ht, wd)
 
-    up_data = torch.sum(mask * up_data, dim=2)
+    up_data = torch.sum(mask * up_data, dim=2) # (mask*up_data).shape=(batch, dim, 9, 8, 8, ht, wd)
+    # up_data.shape = (batch, dim, 8, 8, ht, wd) # sum over 9 (9 gayab ho gaya)
     up_data = up_data.permute(0, 4, 2, 5, 3, 1)
-    up_data = up_data.reshape(batch, 8*ht, 8*wd, dim)
+    # up_data.shape = (batch, ht, 8, wd, 8, dim) 
+    up_data = up_data.reshape(batch, 8*ht, 8*wd, dim) # now (h,w) is 8 times larger than (ht,wd)
 
     return up_data
 
@@ -41,6 +45,7 @@ def upsample_disp(disp, mask):
     batch, num, ht, wd = disp.shape
     disp = disp.view(batch*num, ht, wd, 1)
     mask = mask.view(batch*num, -1, ht, wd)
+    # cvx_upsample is the same function that is used in RAFT to upsample optical flow.
     return cvx_upsample(disp, mask).view(batch, num, 8*ht, 8*wd)
 
 
@@ -162,8 +167,10 @@ class UpdateModule(nn.Module):
         if ii is not None:
             """Took from Paper: 
             pool(scatter_mean) the hidden state over all features which share the same source view i and 
-            predict a pixel-wise damping factor λ ("eta" here, and "damping" in other .py files, and again "eta" in cuda code).
-            Additionally, we use the pooled features to predict a 8x8 mask which can be used to upsample the inverse depth estimate."""
+            predict a pixel-wise damping factor λ ("eta" here, and "damping" in other .py files, 
+            and again "eta" in cuda code).
+            Additionally, we use the pooled features to predict a 8x8 mask which can be used to 
+            upsample the inverse depth estimate."""
             eta, upmask = self.agg(net, ii.to(net.device))
             return net, delta, weight, eta, upmask
 
@@ -202,7 +209,7 @@ class DroidNet(nn.Module):
     def forward(self, Gs, images, disps, intrinsics, graph=None, num_steps=12, fixedp=2):
         """ Estimates SE3 or Sim3 between pair of frames """
 
-        u = keyframe_indicies(graph)
+        # u = keyframe_indicies(graph)
 
         """DEBUG: what is the size of ii and jj... is it just one edge or list of edges ?? """
         ii, jj, kk = graph_to_edge_list(graph)

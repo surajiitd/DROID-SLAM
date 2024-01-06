@@ -55,7 +55,7 @@ class MotionFilter:
         inputs = inputs.sub_(self.MEAN).div_(self.STDV)
 
         # extract features
-        """NEW FRAME .... gmap is new frame, and fmap is previous frame."""
+        """NEW FRAME .... IN this whole file code: gmap is new frame, and fmap is previous frame."""
         gmap = self.__feature_encoder(inputs)
 
         ### always add first frame to the depth video ###
@@ -82,9 +82,11 @@ class MotionFilter:
             corr = CorrBlock(self.fmap[None,[0]], gmap[None,[0]])(coords0)
 
             # approximate flow magnitude using 1 update iteration
-            _, delta, _ = self.update(self.net[None], self.inp[None], corr)
+            _, delta, weight = self.update(self.net[None], self.inp[None], corr)
+            # note that here we are using corr lookup from new frame. but self.net and self.inp are from previous keyframe.
+            # self.net from prev keyframe is fine. But self.inp(context input) from prev keyframe has to be noted.
 
-            # check motion magnitue / add new frame to video
+            # check motion magnitue / add new frame to video if there is enough motion.
             if delta.norm(dim=-1).mean().item() > self.thresh:
                 self.count = 0
                 """ 
@@ -98,10 +100,11 @@ class MotionFilter:
                 self.net, self.inp, self.fmap = net, inp, gmap  #storing gmap in fmap for next iteration. So fmap is always the last frame processed(only if it had enough motion).
                 # add new frame to video and increase the counter.value of video by 1.
                 self.video.append(tstamp, image[0], None, None, depth, intrinsics / 8.0, gmap, net[0], inp[0], gt_pose, gt_depth)
+                
 
             else:
                 # not enough motion, then totally skip(ignore) that frame (and fmap is not updated and same as last processed frame)
-                #Srj: it is counting the number of consecutive frames that are not added to the video.
+                #Srj: self.count is counting the number of consecutive frames that are not added to the video(that are skipped).
                 self.count += 1
 
 
